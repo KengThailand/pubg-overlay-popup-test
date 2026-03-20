@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>PUBG POPUP OVERLAY</title>
+    <style>
+        @font-face {
+            font-family: 'TransducerBold';
+            src: url('TransducerBold.otf') format('opentype'); 
+            font-weight: bold;
+            font-style: normal;
+        }
+
+        body { 
+            margin: 0; padding: 0; 
+            background: transparent; 
+            overflow: hidden; 
+            width: 1920px; height: 1080px; 
+            font-family: 'TransducerBold', sans-serif; 
+        }
+
+        .notif-container { 
+            position: absolute; 
+            top: 45%; 
+            right: 50px; 
+            transform: translateY(-50%); 
+            width: 800px; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: flex-end; 
+            pointer-events: none; 
+        }
+        
+        .item-popup { 
+            opacity: 0; 
+            transform: translateX(100px); 
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+            margin-bottom: 20px; 
+        }
+        .item-popup.show { opacity: 1; transform: translateX(0); }
+
+        /* BLUECHIP Style */
+        .popup-bluechip {
+            width: 400px; height: 100px;
+            /* ใช้ไฟล์พื้นหลังที่คุณตั้งชื่อมา */
+            background-image: url('USING BLUECHIP.png'); 
+            background-size: 100% 100%;
+            display: flex; align-items: center; padding: 0 20px;
+            filter: drop-shadow(0 5px 15px rgba(0,0,0,0.4));
+        }
+
+        .bc-logo-wrapper {
+            width: 75px; height: 75px;
+            margin-right: 15px;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        .bc-logo {
+            width: 60px; height: 60px;
+            background-size: contain; background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        .bc-info { display: flex; flex-direction: column; margin-left: 10px; }
+        .bc-player { 
+            font-size: 32px; color: #fff; 
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
+            text-transform: uppercase; line-height: 1; 
+        }
+        .bc-status { 
+            font-size: 14px; color: #f39c12; 
+            text-transform: uppercase; letter-spacing: 1px; margin-top: 5px; 
+        }
+
+        /* FIRST KILL Style */
+        .popup-firstkill { 
+            width: 520px; background: white; padding: 25px; 
+            border-radius: 4px; display: flex; flex-direction: column; 
+            align-items: center; box-shadow: 0 15px 40px rgba(0,0,0,0.3); 
+            border: 2px solid #ddd; 
+        }
+        .fk-title { font-size: 65px; color: #000; margin: 0; line-height: 1; }
+        .fk-name-bar { background: #f39c12; padding: 12px 60px; margin-top: 18px; }
+        .fk-player-name { font-size: 42px; color: #000; margin: 0; text-transform: uppercase; }
+
+        .flash-anim { animation: flashEffect 0.6s ease-out; }
+        @keyframes flashEffect { 0% { filter: brightness(1); } 20% { filter: brightness(2); } 100% { filter: brightness(1); } }
+    </style>
+</head>
+<body>
+    <div id="notifArea" class="notif-container"></div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const TOURNAMENT_ID = urlParams.get('id');
+        
+        // ดึงโลโก้จาก XAMPP (localhost) ของเครื่องที่เปิด URL นี้
+        const LOCAL_LOGO_PATH = "http://localhost/img/"; 
+
+        let previousBCStats = {}; 
+        let currentMatchId = "";
+        let firstKillShown = false;
+        let isProcessing = false;
+        let queue = [];
+
+        async function checkData() {
+            if(!TOURNAMENT_ID) return;
+            const t = new Date().getTime();
+            const url = `https://domestic.atum.live/api/pubg/liveleaderboard?account_id=nttapon7799&series=sea-thsc&tournament_id=${TOURNAMENT_ID}&mode=post&all_teams=true&_t=${t}`;
+
+            try {
+                const res = await fetch(url);
+                const json = await res.json();
+                if (!json.data || !json.data.teams) return;
+
+                if (json.data.last_match_id !== currentMatchId) {
+                    currentMatchId = json.data.last_match_id;
+                    firstKillShown = false;
+                }
+
+                if (!firstKillShown && json.data.eliminationCount > 0) {
+                    findFirstKiller(json.data.teams);
+                }
+
+                json.data.teams.forEach(team => {
+                    if (!team.players) return;
+                    team.players.forEach(player => {
+                        const pID = `${team.team_name}_${player.name}`;
+                        const currentBC = player.useBluechipCount || 0;
+                        if (previousBCStats[pID] !== undefined && currentBC > previousBCStats[pID]) {
+                            enqueue({ type: 'BLUECHIP', team: team.team_name, player: player.name });
+                        }
+                        previousBCStats[pID] = currentBC;
+                    });
+                });
+            } catch (e) { console.error("API Error"); }
+        }
+
+        function findFirstKiller(teams) {
+            for (let team of teams) {
+                if (team.players) {
+                    for (let player of team.players) {
+                        if (player.match_kills > 0) {
+                            enqueue({ type: 'FIRSTKILL', player: player.name });
+                            firstKillShown = true;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        function enqueue(item) {
+            queue.push(item);
+            processQueue();
+        }
+
+        function processQueue() {
+            if (isProcessing || queue.length === 0) return;
+            isProcessing = true;
+
+            const data = queue.shift();
+            const area = document.getElementById('notifArea');
+            const popup = document.createElement('div');
+            
+            if (data.type === 'BLUECHIP') {
+                popup.className = 'item-popup popup-bluechip flash-anim';
+                const logoUrl = `${LOCAL_LOGO_PATH}${data.team}.png`;
+                popup.innerHTML = `
+                    <div class="bc-logo-wrapper">
+                        <div class="bc-logo" style="background-image: url('${logoUrl}');"></div>
+                    </div>
+                    <div class="bc-info">
+                        <div class="bc-player">${data.player}</div>
+                        <div class="bc-status">USING BLUECHIP</div>
+                    </div>
+                `;
+            } else {
+                popup.className = 'item-popup popup-firstkill flash-anim';
+                popup.innerHTML = `
+                    <h1 class="fk-title">FIRST KILL</h1>
+                    <div class="fk-name-bar">
+                        <p class="fk-player-name">${data.player}</p>
+                    </div>
+                `;
+            }
+            
+            area.appendChild(popup);
+            setTimeout(() => popup.classList.add('show'), 100);
+
+            setTimeout(() => {
+                popup.classList.remove('show');
+                setTimeout(() => {
+                    popup.remove();
+                    isProcessing = false;
+                    processQueue();
+                }, 600);
+            }, 5000);
+        }
+
+        setInterval(checkData, 2000);
+        checkData();
+    </script>
+</body>
+</html>

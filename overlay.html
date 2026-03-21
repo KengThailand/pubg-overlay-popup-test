@@ -2,8 +2,9 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <title>PUBG POPUP OVERLAY</title>
+    <title>PUBG BLUECHIP OVERLAY</title>
     <style>
+        /* --- 1. การติดตั้งฟอนต์ Transducer Bold --- */
         @font-face {
             font-family: 'TransducerBold';
             src: url('TransducerBold.otf') format('opentype'); 
@@ -19,6 +20,7 @@
             font-family: 'TransducerBold', sans-serif; 
         }
 
+        /* ตำแหน่งแจ้งเตือน (ขวากลางจอ) */
         .notif-container { 
             position: absolute; 
             top: 45%; 
@@ -39,10 +41,11 @@
         }
         .item-popup.show { opacity: 1; transform: translateX(0); }
 
-        /* BLUECHIP Style */
+        /* --------------------------------------
+           BLUECHIP Style (พื้นหลัง USING BLUECHIP.png)
+        -------------------------------------- */
         .popup-bluechip {
             width: 400px; height: 100px;
-            /* ใช้ไฟล์พื้นหลังที่คุณตั้งชื่อมา */
             background-image: url('USING BLUECHIP.png'); 
             background-size: 100% 100%;
             display: flex; align-items: center; padding: 0 20px;
@@ -72,34 +75,22 @@
             text-transform: uppercase; letter-spacing: 1px; margin-top: 5px; 
         }
 
-        /* FIRST KILL Style */
-        .popup-firstkill { 
-            width: 520px; background: white; padding: 25px; 
-            border-radius: 4px; display: flex; flex-direction: column; 
-            align-items: center; box-shadow: 0 15px 40px rgba(0,0,0,0.3); 
-            border: 2px solid #ddd; 
-        }
-        .fk-title { font-size: 65px; color: #000; margin: 0; line-height: 1; }
-        .fk-name-bar { background: #f39c12; padding: 12px 60px; margin-top: 18px; }
-        .fk-player-name { font-size: 42px; color: #000; margin: 0; text-transform: uppercase; }
-
         .flash-anim { animation: flashEffect 0.6s ease-out; }
-        @keyframes flashEffect { 0% { filter: brightness(1); } 20% { filter: brightness(2); } 100% { filter: brightness(1); } }
+        @keyframes flashEffect { 0% { filter: brightness(1); } 20% { filter: brightness(2.5); } 100% { filter: brightness(1); } }
     </style>
 </head>
 <body>
     <div id="notifArea" class="notif-container"></div>
 
     <script>
+        // ดึง ID จาก URL (?id=xxxx)
         const urlParams = new URLSearchParams(window.location.search);
         const TOURNAMENT_ID = urlParams.get('id');
         
-        // ดึงโลโก้จาก XAMPP (localhost) ของเครื่องที่เปิด URL นี้
-        const LOCAL_LOGO_PATH = "http://localhost/img/"; 
+        // พาธโลโก้ทีมใน XAMPP (แก้เป็น /pupup/ ตามที่คุณต้องการ)
+        const LOCAL_LOGO_PATH = "http://localhost/pupup/"; 
 
         let previousBCStats = {}; 
-        let currentMatchId = "";
-        let firstKillShown = false;
         let isProcessing = false;
         let queue = [];
 
@@ -113,41 +104,21 @@
                 const json = await res.json();
                 if (!json.data || !json.data.teams) return;
 
-                if (json.data.last_match_id !== currentMatchId) {
-                    currentMatchId = json.data.last_match_id;
-                    firstKillShown = false;
-                }
-
-                if (!firstKillShown && json.data.eliminationCount > 0) {
-                    findFirstKiller(json.data.teams);
-                }
-
+                // ตรวจสอบเฉพาะการใช้ Bluechip
                 json.data.teams.forEach(team => {
                     if (!team.players) return;
                     team.players.forEach(player => {
                         const pID = `${team.team_name}_${player.name}`;
                         const currentBC = player.useBluechipCount || 0;
+                        
+                        // ถ้าจำนวนการใช้ Bluechip เพิ่มขึ้น ให้เพิ่มเข้าคิวแสดงผล
                         if (previousBCStats[pID] !== undefined && currentBC > previousBCStats[pID]) {
-                            enqueue({ type: 'BLUECHIP', team: team.team_name, player: player.name });
+                            enqueue({ team: team.team_name, player: player.name });
                         }
                         previousBCStats[pID] = currentBC;
                     });
                 });
-            } catch (e) { console.error("API Error"); }
-        }
-
-        function findFirstKiller(teams) {
-            for (let team of teams) {
-                if (team.players) {
-                    for (let player of team.players) {
-                        if (player.match_kills > 0) {
-                            enqueue({ type: 'FIRSTKILL', player: player.name });
-                            firstKillShown = true;
-                            return;
-                        }
-                    }
-                }
-            }
+            } catch (e) { console.error("API Error: Check Tournament ID or Connection"); }
         }
 
         function enqueue(item) {
@@ -163,31 +134,23 @@
             const area = document.getElementById('notifArea');
             const popup = document.createElement('div');
             
-            if (data.type === 'BLUECHIP') {
-                popup.className = 'item-popup popup-bluechip flash-anim';
-                const logoUrl = `${LOCAL_LOGO_PATH}${data.team}.png`;
-                popup.innerHTML = `
-                    <div class="bc-logo-wrapper">
-                        <div class="bc-logo" style="background-image: url('${logoUrl}');"></div>
-                    </div>
-                    <div class="bc-info">
-                        <div class="bc-player">${data.player}</div>
-                        <div class="bc-status">USING BLUECHIP</div>
-                    </div>
-                `;
-            } else {
-                popup.className = 'item-popup popup-firstkill flash-anim';
-                popup.innerHTML = `
-                    <h1 class="fk-title">FIRST KILL</h1>
-                    <div class="fk-name-bar">
-                        <p class="fk-player-name">${data.player}</p>
-                    </div>
-                `;
-            }
+            popup.className = 'item-popup popup-bluechip flash-anim';
+            const logoUrl = `${LOCAL_LOGO_PATH}${data.team}.png`;
+
+            popup.innerHTML = `
+                <div class="bc-logo-wrapper">
+                    <div class="bc-logo" style="background-image: url('${logoUrl}');"></div>
+                </div>
+                <div class="bc-info">
+                    <div class="bc-player">${data.player}</div>
+                    <div class="bc-status">USING BLUECHIP</div>
+                </div>
+            `;
             
             area.appendChild(popup);
             setTimeout(() => popup.classList.add('show'), 100);
 
+            // แสดงค้างไว้ 5 วินาทีแล้วหายไป
             setTimeout(() => {
                 popup.classList.remove('show');
                 setTimeout(() => {
@@ -198,6 +161,7 @@
             }, 5000);
         }
 
+        // เช็คข้อมูลทุกๆ 2 วินาที
         setInterval(checkData, 2000);
         checkData();
     </script>
